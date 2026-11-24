@@ -58,6 +58,7 @@ def candidates() -> list[tuple[str, bytes, str]]:
         "Cargo.toml": AUTHORED,
         "src/lib.rs": AUTHORED,
         "src/runtime.rs": AUTHORED,
+        "src/spawner_data.rs": "authored (`tools/spawner_contract.json` values -> `tools/gen_spawner_data.py`)",
         "tools/dimension_contract.json": CONTRACT,
     }
     for name, origin in explicit.items():

@@ -1,4 +1,4 @@
-# The Bumblezone — port notes (v0.1.1: nine biomes + the layer stack)
+# The Bumblezone — port notes (v0.1.2: nine biomes' mob spawner lists)
 
 Skills: superpowers/using-superpowers, brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion; BeautifulRust/rust-best-practices
 
@@ -35,6 +35,53 @@ ruling names this mod. So:
 83,641,779 B, SHA-256 `859d87b44d3d17c63f38317ac34d124e30b6de8c3043fa61ee987ff8b1f236d6`
 (re-verified at dispatch). Upstream repo read only as analysis aid; no Java code
 was copied or decompiled.
+
+## Slice 0.1.2 — the nine biomes' mob spawner lists
+
+**Decoder gate (measured before the carry):**
+`ports/_shared/evidence/the_bumblezone/spawner-decoder-gate.log`. The game's
+`crates/horizon-client-render/src/biome.rs::BiomeInfo::from_json` (lines 209-225,
+pin provider 1d63e0a) reads `attributes["minecraft:gameplay/natural_mob_spawns"]`
+for a data-pack biome, unwrapping the `{argument, modifier: overlay}` form and
+iterating `spawns_by_category` through `parse_entries`. That parser accepts a
+plain number, a `minecraft:constant`, or **`{"min_inclusive","max_inclusive"}`** —
+so the jar's `minCount`/`maxCount` translate losslessly to the 26.3 range shape.
+`Biomes::with_packs` applies it to mod biome files; the fixture `glass_meadow.json`
+and the published `twilightforest` port use the same shape. Verdict: **accepted**;
+no `blocked(...)` for this family.
+
+**Carry:** the jar's nine `spawners` objects hold **65 entries** across eight
+categories (non-empty: `creature` in all nine, `monster` in eight). Values read
+by `tools/spawner_contract.py --write` into `tools/spawner_contract.json`; emitted
+as typed Rust by `tools/gen_spawner_data.py` into `src/spawner_data.rs` and as
+26.3 JSON by `tools/gen_biomes.py` (count = `{min_inclusive, max_inclusive}`,
+weight and type verbatim). All eight categories are declared in each biome JSON.
+Zero jar-derived bytes remains green (19 tree candidates, 19 package entries).
+
+**Red first:** `evidence/the_bumblezone/unit-test-red-012.log` shows
+`the_spawner_contract_matches_the_jars_biomes ... FAILED` with
+`the_bumblezone:hive_pillar: expected creature weight=80, got
+the_bumblezone:hive_pillar spawns: unknown biome` (the stub had no data) and
+`test result: FAILED. 12 passed; 2 failed`. Green after the carry: **14 passed**
+in the final `sdk-test.log`.
+
+**A defect found and fixed in the glue:** the first game leg answered
+`Unknown or incomplete command` because `run_command` matched
+`CommandArgumentValue::Id` for a `<biome:id>` argument. The pin's own command docs
+(`horizon-mod-vocab/src/hooks/notes.rs`, `command/types.rs`) say the free `id`
+kind is delivered as the canonical **String**; `CommandArgumentValue::Id` is only
+for `resource:<registry>` arguments. The handler returned `Continue`, so the
+dispatcher fell through to vanilla. Fixed by matching `String`; the failing log
+is kept at `evidence/e2e-guard/the_bumblezone-20261124-142615-2316713.log`.
+
+**In-game assertion (fail-capable):** `ctl chat "/the_bumblezone spawners
+the_bumblezone:hive_pillar"` prints
+`the_bumblezone:hive_pillar spawns: creature weight=80 (4 entries) monster
+weight=26 (5 entries)`; the unmodded control answers `Unknown or incomplete
+command`, `SELFTEST=1` (expecting an empty vanilla list) fails, and an unknown
+biome is refused with `spawns: unknown biome`. New legs:
+`e2e-spawners{,-control,-selftest}.log`; the four 0.1.1 legs were re-run on the
+final binary and stay green.
 
 ## Slice 0.1.1 — the nine biomes and the `BzBiomeSource` layer stack
 
@@ -156,9 +203,10 @@ Evidence for both rows: `ports/_shared/evidence/the_bumblezone/pin-gaps.log`.
   not ported, so the generator still leaves the chunk as air (the level opens and
   accepts blocks, proved in 0.1.0). Slice 0.1.1 **does** carry the nine biomes and
   composes the seven layer families, so the source no longer answers four vanilla
-  stand-ins. Not carried: the biome files' mob spawner lists, carvers and the
-  configured features they reference (`configured-feature-not-registered`), and
-  the client `effects` id (no `DimensionSettings` field). The terrain itself is
+  stand-ins. Slice 0.1.2 **does** carry the biome files' mob spawner lists (65
+  entries) as authored 26.3 values, proved in game; not carried: the carvers and
+  the configured features they reference (`configured-feature-not-registered`),
+  and the client `effects` id (no `DimensionSettings` field). The terrain itself is
   still air, so the carried biome selection is proved through the source's own
   readout rather than through shaped terrain.
 - **Not in scope of the artefact's first slice:** 906 structures, 548 tags, 204
@@ -174,7 +222,8 @@ Evidence for both rows: `ports/_shared/evidence/the_bumblezone/pin-gaps.log`.
 | `the_bumblezone:biome_source` id | registered | `register_biome_source("biome_source", …)`; answers the nine carried biomes (`runtime::BIOMES`) through the seven-layer stack |
 | nine `worldgen/biome` definitions | carried (authored) | `tools/biome_contract.json` → `tools/gen_biomes.py`; 9 files, 6,705 B, zero jar-derived bytes; `gen_biomes.py --check` |
 | seven `BzBiomeSource` layer families | carried (pure logic) | `runtime::LAYER_FAMILIES` + `biome_index`; coverage test reaches all nine ids; probed cell readout in game |
-| biome spawners / carvers / features | `blocked(configured-feature-not-registered)` | pin surface has 0 configured-feature symbols; empty in the authored JSON |
+| nine biome files' mob spawner lists (65 entries) | carried + tested (0.1.2) | `tools/spawner_contract.py` → `tools/gen_spawner_data.py` + `tools/gen_biomes.py` (26.3 range counts); `/the_bumblezone spawners` readout; `e2e-spawners{,-control,-selftest}.log` |
+| biome carvers / configured features | `blocked(configured-feature-not-registered)` | pin surface has 0 configured-feature symbols; still empty in the authored JSON |
 | `dimension_type` values (17 fields) | carried as values | `tools/dimension_contract.json`, Rust data-contract test, in-game readout |
 | fixed time 6000, `natural`, client `effects` | deviation recorded | no SDK field; `has_fixed_time` + `day_cycle = none` |
 | configured / placed features | `blocked(configured-feature-not-registered)` | 0 registrar symbols in pin surface |
@@ -188,29 +237,30 @@ None found in the two dimension files this slice carries. The jar's `mods.toml`
 licence claim (MIT vs the LGPL/ARR files) is a documentation inconsistency, not a
 behaviour defect; the specific file wins (ARCHITECTURE.md §8).
 
-## Verification (fresh, 2026-11-24, version 0.1.1)
+## Verification (fresh, 2026-11-24, version 0.1.2)
 
-Package **`the_bumblezone.hmod` 37,299 B**, SHA-256
-`d9b8f63c7d5438fe6b719af08efa5eb33aab87d34e1801c910e360385a046907`, 18 entries;
-runtime byte-identical in the tree and package (`1d5ae47cd8d9…`). Full table,
+Package **`the_bumblezone.hmod` 42,589 B**, SHA-256
+`fd31a9a6ffc0635181405ac8104951686936d99ed3b323433a7a2c40f15a36a9`, 19 entries;
+runtime byte-identical in the tree and package (`52cbff42feee…`). Full table,
 commands and transcript in [`VALIDATION.md`](VALIDATION.md).
 
-- Red first: `the_source_answers_the_jars_biomes` failed with
-  `left: ["minecraft:plains", "minecraft:forest", "minecraft:taiga", "minecraft:desert"]`,
-  right: the nine mod ids (`unit-test-red-011.log`). Green: **12 tests passed**,
-  clippy `-D warnings` clean, rustfmt clean; contract tools green (23 dimension
-  keys, 9 biomes / 8 tags / 7 families, 9 generated files).
-- `cargo horizon-mod check`: *142 API items, Made for 0a875da*. Package check:
-  *0.1.1, native-1/0a875da…, 37,299 bytes, sha d9b8f63c…*.
+- Red first (0.1.2): `the_spawner_contract_matches_the_jars_biomes ... FAILED`
+  with `spawns: unknown biome`, `12 passed; 2 failed`
+  (`unit-test-red-012.log`). Green after the carry: **14 passed**, clippy
+  `-D warnings` clean, rustfmt clean; contract tools green (23 dimension keys,
+  9 biomes / 8 tags / 7 families, 9 spawner biomes / 8 categories / 65 entries,
+  9 generated biome files, generated `spawner_data.rs`).
+- `cargo horizon-mod check`: *155 API items, Made for 0a875da*. Package check:
+  *0.1.2, native-1/0a875da…, 42,589 bytes, sha fd31a9a6…*.
 - `fits --build 0a875da`: **`0a875da made for`**; `fits --build 0b14f8a`:
-  **`0b14f8a fits`** (exit 0 on both).
+  **`0b14f8a fits`** (exit 0 on both; no local `Block`/`Item` variant).
 - **Zero jar-derived asset bytes**: `tools/check_provenance.py` hashed all 5,509
-  distinct jar entries, the 18 candidate tree files (86,544 B) and all 18 package
+  distinct jar entries, the 19 candidate tree files (126,710 B) and all 19 package
   entries; matched: 0. The icon is the deterministic monogram
   (`c78c73abbb8239dce8824867ddbdd9790bd9183c8abfd868dc2f105e86da4834`, 2,096 B).
 - `verify-sdk-package.py the_bumblezone` → **1/1** (including *package matches the
   tree*); `check-e2e-logs.py the_bumblezone-e2e --strict` →
-  `logs=4 ok=4 missing-exit=0 bad-exit=0`;
+  `logs=7 ok=7 missing-exit=0 bad-exit=0`;
   `check-skills.py --notes ports/the_bumblezone --strict` → PASS.
 
 ### In-game `ctl` transcript (headless creative, seed 20261105)
@@ -240,28 +290,47 @@ Fail-capable legs: the same commands on the **unmodded control** end
 + `EXIT:1`; `BLOCK_SELFTEST=1` ends `FAIL: BLOCK_SELFTEST: the glass is present` +
 `EXIT:1`. Logs: `ports/_shared/evidence/the_bumblezone-e2e/e2e{,-control,-selftest,-block-selftest}.log`.
 
-## Next slice (proposed after 0.1.1)
+### Spawner readout transcript (0.1.2, same seed, final 0.1.2 binary)
 
-**Family:** the nine biomes' **mob spawner lists** — translate each
-`data/the_bumblezone/worldgen/biome/*.json` `spawners` object into the 26.3
-`minecraft:gameplay/natural_mob_spawns` `spawns_by_category` shape (currently
-authored empty in `tools/gen_biomes.py`), regenerated from values with zero jar
-bytes. `the_bumblezone:biome_source` and the nine biomes are already shipped, so
-this is the next honest gap in the same family.
+```
+ctl chat "/the_bumblezone spawners the_bumblezone:hive_pillar"
+  -> the_bumblezone:hive_pillar spawns: creature weight=80 (4 entries) monster weight=26 (5 entries)
+ctl chat "/the_bumblezone spawners the_bumblezone:no_such_biome"
+  -> the_bumblezone:no_such_biome spawns: unknown biome
+PASS / EXIT:0
+```
 
-**Gap line:** this document, *"Not carried: the biome files' mob spawner lists …
-(the configured-feature registrar is absent at this pin)"* and the coverage row
-*`biome spawners / carvers / features | blocked(...)`*.
+Fail-capable: the unmodded control answers `Unknown or incomplete command` +
+`FAIL`/`EXIT:1`; `SELFTEST=1` (expecting an empty vanilla list) ends
+`FAIL: SELFTEST: the spawner readout named category weights …` + `EXIT:1`.
+Logs: `ports/_shared/evidence/the_bumblezone-e2e/e2e-spawners{,-control,-selftest}.log`.
 
-**Tier fit:** `deep` worldgen. The spawner data is a value family in the carried
-biome JSON; no new registrar is needed. It must be authored from the nine files'
-semantics (mob id, category, weight, min/max count), never copied as bytes, and
-the zero-byte provenance proof must stay green.
+## Next slice (proposed after 0.1.2)
 
-**Concrete `ctl` assertion:** add a pure-Rust readout
-`/the_bumblezone spawners <biome>` (e.g. `hive_pillar`) naming the parsed spawn
-categories and total weight from the authored contract; assert in game that
-`ctl chat "/the_bumblezone spawners the_bumblezone:hive_pillar"` prints e.g.
-`monster weight=… creature weight=…`, that the unmodded control answers
-`Unknown or incomplete command`, and that `SELFTEST=1` (expecting an empty
-vanilla spawner list) ends `EXIT:1`. Keep the five 0.1.1 e2e legs green.
+**Family:** the biome files' **carvers and configured features** they reference
+(`data/the_bumblezone/worldgen/biome/*.json` `carvers: []` and the seven empty
+`features` steps). Both remain `blocked(configured-feature-not-registered)`: the
+pin's `surface.json` has 0 matches for `configured_feature`, `register_feature`,
+`FeatureType` and `PlacementModifier` (`pin-gaps.log`), so there is no registrar
+to bind them to and no stand-in data may be packed.
+
+**Gap line:** this document's coverage rows
+*`biome carvers / configured features | blocked(configured-feature-not-registered)`*
+and *`configured / placed features | blocked(configured-feature-not-registered)`*.
+
+**Tier fit:** `deep` worldgen, but unlike 0.1.2 this is **not** a value family —
+the 26.3 game decoder only stores feature *ids* in `BiomeInfo::features`; those
+ids must be registered first. A re-check at the next pin is the honest slice:
+grep the new SDK `surface.json` for the four symbols; if any registrar appears,
+carry the configured/placed features from jar values with the same zero-byte
+contract pattern and stop with `blocked(<symbol>)` naming the missing decoder if
+one is still absent.
+
+**Concrete `ctl` assertion (only if the registrar appears):** extend
+`/the_bumblezone spawners` with a `/the_bumblezone features <biome>` readout and
+assert in game that `ctl chat "/the_bumblezone features the_bumblezone:hive_pillar"`
+prints the authored feature id in the correct decoration step, while the
+unmodded control answers `Unknown or incomplete command` and `SELFTEST=1`
+(expecting empty steps) ends `EXIT:1`. If the symbols are still absent, the
+deliverable is the re-check log, not a package change (evidence-only, no bump).
+

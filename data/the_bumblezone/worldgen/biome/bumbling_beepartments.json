@@ -4,7 +4,41 @@
     "minecraft:gameplay/natural_mob_spawns": {
       "argument": {
         "spawn_costs": {},
-        "spawns_by_category": {}
+        "spawns_by_category": {
+          "ambient": [],
+          "axolotls": [],
+          "creature": [
+            {
+              "count": {
+                "max_inclusive": 8,
+                "min_inclusive": 4
+              },
+              "type": "minecraft:bee",
+              "weight": 40
+            },
+            {
+              "count": {
+                "max_inclusive": 1,
+                "min_inclusive": 1
+              },
+              "type": "the_bumblezone:beehemoth",
+              "weight": 15
+            },
+            {
+              "count": {
+                "max_inclusive": 2,
+                "min_inclusive": 1
+              },
+              "type": "the_bumblezone:variant_bee",
+              "weight": 5
+            }
+          ],
+          "misc": [],
+          "monster": [],
+          "underground_water_creature": [],
+          "water_ambient": [],
+          "water_creature": []
+        }
       },
       "modifier": "overlay"
     },

@@ -8,8 +8,10 @@
 //!
 //! Slice 0.1.1 carries the jar's nine `worldgen/biome` definitions as authored
 //! 26.3 data and composes the seven `BzBiomeSource` layer families in pure
-//! logic, so the source answers mod biomes instead of vanilla stand-ins. The
-//! Java terrain shape and configured features remain measured gaps
+//! logic, so the source answers mod biomes instead of vanilla stand-ins.
+//! Slice 0.1.2 adds those nine biomes' mob spawner lists as authored values and a
+//! `/the_bumblezone spawners <biome:id>` readout parsed in game. The Java terrain
+//! shape and configured features remain measured gaps
 //! (`blocked(configured-feature-not-registered)`, `blocked(level_reset:R11)`);
 //! `notes.md` records both with their symbols.
 use mod_api::{
@@ -95,7 +97,7 @@ pub fn register(r: &mut dyn Registrar) {
     r.register_dimension("the_bumblezone", settings());
 }
 
-/// Two usages, with no optional `[…]` group: the engine drops a usage whose
+/// Plain usages, with no optional `[…]` group: the engine drops a usage whose
 /// arguments are optional, so a single `[x]` form would never be in the tree.
 pub fn register_commands(event: &mut RegisterCommandsEvent<'_>) {
     event
@@ -104,34 +106,50 @@ pub fn register_commands(event: &mut RegisterCommandsEvent<'_>) {
     event.commands.push(Command::new(
         "the_bumblezone dimension <x:integer> <y:integer> <z:integer> <seed:integer>",
     ));
+    event
+        .commands
+        .push(Command::new("the_bumblezone spawners <biome:id>"));
 }
 
-/// Answer only our own `dimension` usage; let every other command through.
+/// Answer only our own `dimension` and `spawners` usages; let everything else through.
 pub fn run_command(host: &mut dyn ServerHost, event: &mut RunModCommandEvent<'_>) -> Flow {
     const NAME: &str = "the_bumblezone";
-    if event.command.literals.first().map(String::as_str) != Some(NAME)
-        || event.command.literals.get(1).map(String::as_str) != Some("dimension")
-    {
+    if event.command.literals.first().map(String::as_str) != Some(NAME) {
         return Flow::Continue;
     }
-    let mut line = runtime::status_line();
-    if let (
-        Some(CommandArgumentValue::Integer(x)),
-        Some(CommandArgumentValue::Integer(y)),
-        Some(CommandArgumentValue::Integer(z)),
-        Some(CommandArgumentValue::Integer(seed)),
-    ) = (
-        event.command.argument("x"),
-        event.command.argument("y"),
-        event.command.argument("z"),
-        event.command.argument("seed"),
-    ) {
-        let index = runtime::biome_index([*x >> 2, *y >> 2, *z >> 2], i64::from(*seed));
-        line.push_str(&format!(
-            " | biome {} ({index})",
-            runtime::BIOMES[usize::from(index)]
-        ));
-    }
+    let line = match event.command.literals.get(1).map(String::as_str) {
+        Some("dimension") => {
+            let mut line = runtime::status_line();
+            if let (
+                Some(CommandArgumentValue::Integer(x)),
+                Some(CommandArgumentValue::Integer(y)),
+                Some(CommandArgumentValue::Integer(z)),
+                Some(CommandArgumentValue::Integer(seed)),
+            ) = (
+                event.command.argument("x"),
+                event.command.argument("y"),
+                event.command.argument("z"),
+                event.command.argument("seed"),
+            ) {
+                let index = runtime::biome_index([*x >> 2, *y >> 2, *z >> 2], i64::from(*seed));
+                line.push_str(&format!(
+                    " | biome {} ({index})",
+                    runtime::BIOMES[usize::from(index)]
+                ));
+            }
+            line
+        }
+        Some("spawners") => {
+            // The `id` usage kind delivers a free `namespace:path` identifier as
+            // its canonical String (not `CommandArgumentValue::Id`, which is for
+            // `resource:<registry>` arguments that must name a held id).
+            let Some(CommandArgumentValue::String(biome)) = event.command.argument("biome") else {
+                return Flow::Continue;
+            };
+            runtime::spawners_line(biome)
+        }
+        _ => return Flow::Continue,
+    };
     let _ = host.commands().feedback(Text::literal(line));
     Flow::Cancel
 }
@@ -220,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn the_readout_is_declared_as_two_plain_usages() {
+    fn the_readouts_are_declared_as_plain_usages() {
         let mut commands = Vec::new();
         let mut event = RegisterCommandsEvent {
             commands: &mut commands,
@@ -232,8 +250,12 @@ mod tests {
             vec![
                 "the_bumblezone dimension",
                 "the_bumblezone dimension <x:integer> <y:integer> <z:integer> <seed:integer>",
+                "the_bumblezone spawners <biome:id>",
             ]
         );
         assert!(usages.iter().all(|usage| !usage.contains('[')));
+        // The spawner usage takes a namespaced biome id, delivered as `Id` and
+        // parsed by `run_command`; the in-game leg asserts the game-side reply.
+        assert!(usages[2].ends_with("<biome:id>"));
     }
 }

@@ -5,6 +5,13 @@
 //! Evidence: `tools/dimension_contract.json`, authored from
 //! `data/the_bumblezone/dimension{,_type}/the_bumblezone.json` and the constant
 //! pool of `BzDimension.class` by `tools/carry.py`; no jar byte is packaged.
+//!
+//! Slice 0.1.2 adds the nine biome files' mob spawner lists as compiled values
+//! (`src/spawner_data.rs`, generated from `tools/spawner_contract.json`) and a
+//! parsed readout. The 26.3 game decodes them from the authored biome JSON.
+
+#[path = "spawner_data.rs"]
+mod spawner_data;
 
 /// The dimension id, namespaced by the registrar from the short name
 /// `the_bumblezone` (the package owns that namespace).
@@ -46,6 +53,35 @@ pub const LAYER_FAMILIES: [&str; 7] = [
     "BzBiomePollinatedPillarLayer",
     "BzBiomePollinatedFieldsLayer",
     "BzBiomeMergeLayer",
+];
+
+/// One spawn entry from a biome's `spawners` object (jar values, authored as
+/// data). `min_count`/`max_count` become the 26.3 range count
+/// `{"min_inclusive":…, "max_inclusive":…}`, so neither bound is lost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnEntry {
+    pub entity: &'static str,
+    pub weight: u32,
+    pub min_count: u32,
+    pub max_count: u32,
+}
+
+/// One biome's non-empty categories: `(category, entries)`.
+pub type SpawnCategories = [(&'static str, &'static [SpawnEntry])];
+/// The compiled value contract: `(biome id, its categories)` for nine biomes.
+pub type SpawnTable = [(&'static str, &'static SpawnCategories)];
+
+/// The eight spawn categories of the 26.3 `natural_mob_spawns` attribute, in
+/// the artefact's own key order.
+pub const SPAWN_CATEGORIES: [&str; 8] = [
+    "ambient",
+    "axolotls",
+    "creature",
+    "misc",
+    "monster",
+    "underground_water_creature",
+    "water_ambient",
+    "water_creature",
 ];
 
 /// The jar's `dimension_type` values, field for field where the SDK has a field.
@@ -167,6 +203,27 @@ pub fn biome_index(quart: [i32; 3], seed: i64) -> u16 {
     }
     // BzBiomeLayer base: the dimension's main biome dominates.
     PILLARS[0]
+}
+
+/// The spawner readout for one biome, from the compiled value contract. Each
+/// non-empty category prints its name, summed weight and entry count. The
+/// fail-capable in-game leg parses those numbers from the game-side reply.
+#[must_use]
+pub fn spawners_line(biome: &str) -> String {
+    let Some((_, categories)) = spawner_data::SPAWNERS.iter().find(|(id, _)| *id == biome) else {
+        return format!("{biome} spawns: unknown biome");
+    };
+    let mut line = format!("{biome} spawns:");
+    for category in SPAWN_CATEGORIES {
+        if let Some((_, entries)) = categories.iter().find(|(name, _)| *name == category) {
+            let weight: u32 = entries.iter().map(|entry| entry.weight).sum();
+            line.push_str(&format!(
+                " {category} weight={weight} ({} entries)",
+                entries.len()
+            ));
+        }
+    }
+    line
 }
 
 /// One line naming the three registered ids and the dimension_type numbers.
@@ -384,6 +441,62 @@ mod tests {
             BIOMES.as_slice(),
             &want,
             "the biome source must answer the jar's nine biomes, not vanilla stand-ins"
+        );
+    }
+
+    /// RED FIRST (slice 0.1.2): the nine biome files' spawner lists must be
+    /// carried as values. Each pair is the sum of the jar's `spawners` weights
+    /// for `creature` and `monster` (read by tools/spawner_contract.py). The
+    /// empty `bumbling_beepartments` monster list has no `monster` line.
+    #[test]
+    fn the_spawner_contract_matches_the_jars_biomes() {
+        let want: [(&str, u32, u32); 9] = [
+            ("the_bumblezone:hive_pillar", 80, 26),
+            ("the_bumblezone:hive_wall", 70, 34),
+            ("the_bumblezone:pollinated_fields", 100, 43),
+            ("the_bumblezone:pollinated_pillar", 100, 44),
+            ("the_bumblezone:sugar_water_floor", 80, 23),
+            ("the_bumblezone:crystal_canyon", 89, 23),
+            ("the_bumblezone:floral_meadow", 85, 28),
+            ("the_bumblezone:howling_constructs", 99, 20),
+            ("the_bumblezone:bumbling_beepartments", 60, 0),
+        ];
+        for (id, creature, monster) in want {
+            let line = spawners_line(id);
+            assert!(
+                line.contains(&format!("creature weight={creature}")),
+                "{id}: expected creature weight={creature}, got {line}"
+            );
+            if monster > 0 {
+                assert!(
+                    line.contains(&format!("monster weight={monster}")),
+                    "{id}: expected monster weight={monster}, got {line}"
+                );
+            }
+        }
+    }
+
+    /// The lossless part of the translation: the jar's `minCount`/`maxCount`
+    /// survive as a 26.3 range, not collapsed to one number.
+    #[test]
+    fn spawner_entries_preserve_the_jars_ranges() {
+        let (_, categories) = spawner_data::SPAWNERS
+            .iter()
+            .find(|(id, _)| *id == "the_bumblezone:hive_pillar")
+            .expect("hive_pillar spawners");
+        let (_, creature) = categories
+            .iter()
+            .find(|(name, _)| *name == "creature")
+            .expect("hive_pillar creature spawns");
+        assert_eq!(
+            creature[0],
+            SpawnEntry {
+                entity: "minecraft:bee",
+                weight: 50,
+                min_count: 4,
+                max_count: 8,
+            },
+            "the bee entry keeps its weight and both count bounds"
         );
     }
 }

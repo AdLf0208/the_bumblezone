@@ -10,16 +10,25 @@ regenerated, and `tools/check_provenance.py` proves zero jar-derived bytes. The 
 is published with its complete corresponding source under LGPL-3.0. See
 [`LICENSE-NOTICE.md`](LICENSE-NOTICE.md).
 
-## What this slice does (0.1.1)
+## What this slice does (0.1.2)
 
 Carries the jar's **nine** `worldgen/biome` definitions as authored 26.3-shape
 JSON (`tools/biome_contract.json` values → `tools/gen_biomes.py`), with zero
 jar-derived bytes, and composes the **seven** `BzBiomeSource` layer families
 (base, pillar, scale, blob, pollinated pillar, pollinated fields, merge) in pure
-logic. The registered source now answers the mod's biomes (e.g.
-`the_bumblezone:hive_pillar`) instead of four vanilla stand-ins. The in-game
-leg asserts the probed cell's `biome …` line names a mod id; the unmodded
-control answers `Unknown or incomplete command` and `SELFTEST=1` fails.
+logic. The registered source answers the mod's biomes (e.g.
+`the_bumblezone:hive_pillar`) instead of four vanilla stand-ins.
+
+This slice adds the nine biome files' **mob spawner lists**: the jar's 65 spawn
+entries (entity type, weight, `minCount`/`maxCount`) are transcribed as values by
+`tools/spawner_contract.py`, emitted as typed Rust by `tools/gen_spawner_data.py`
+and as 26.3 `minecraft:gameplay/natural_mob_spawns` `spawns_by_category` JSON by
+`tools/gen_biomes.py` (the count becomes a `min_inclusive`/`max_inclusive` range,
+so neither bound is lost). `/the_bumblezone spawners <biome:id>` prints the
+parsed category weights in game; the fail-capable leg asserts
+`creature weight=80 monster weight=26` for `the_bumblezone:hive_pillar`, an
+unmodded control answers `Unknown or incomplete command`, and `SELFTEST=1`
+(expecting an empty vanilla list) fails. The 0.1.1 readout legs stay green.
 
 The dimension slice from 0.1.0 is unchanged: it registers the three ids the jar declares:
 
@@ -36,18 +45,22 @@ piglins safe, beds work, fixed time 6000).
 the numbers, and is asserted in game on the modded build, the unmodded control and
 an inverted `SELFTEST=1` leg.
 
-The Java terrain shape, the mob spawner lists, configured features and the client
-dimension effects are recorded as gaps in [`notes.md`](notes.md); nothing is faked to
-fill them. Note: the brief said "ten" biomes / "nine" layers, but the artefact
+The Java terrain shape, configured features, carvers and the client dimension
+effects are recorded as gaps in [`notes.md`](notes.md); nothing is faked to fill
+them. Note: the original brief said "ten" biomes / "nine" layers, but the artefact
 carries **nine** biome files and **seven** `BzBiome*Layer` classes — the artefact
-is the authority.
+is the authority. The spawner decoder was measured before the carry
+(`spawner-decoder-gate.log`): `BiomeInfo::from_json` reads the section for a mod
+biome, so this family is carried rather than left blocked.
 
 ## Build and verify
 
 ```sh
 python3 tools/carry.py --check            # dimension snapshot vs jar vs Rust
 python3 tools/biome_contract.py --check   # nine biome ids/tags/families vs jar + Rust
-python3 tools/gen_biomes.py --check       # shipped JSON matches the generator
+python3 tools/spawner_contract.py --check # 65 spawner entries vs jar (values only)
+python3 tools/gen_spawner_data.py --check # shipped spawner_data.rs matches the contract
+python3 tools/gen_biomes.py --check       # shipped JSON matches both generators
 python3 tools/check_provenance.py --check # zero jar-derived asset bytes
 ports/tools/build-slot.sh run --job BZ --port ports/the_bumblezone --step test -- \
     env CARGO_INCREMENTAL=0 cargo test --offline
@@ -55,6 +68,6 @@ ports/tools/build-slot.sh run --job BZ --port ports/the_bumblezone --step check 
     cargo horizon-mod check
 ports/tools/build-slot.sh run --job BZ --port ports/the_bumblezone --step build -- \
     bash -c 'rm -f Cargo.lock && cargo horizon-mod build && cp target/horizon-mod/the_bumblezone.hmod the_bumblezone.hmod'
-BUILD_LOCAL=1 ports/tools/launcher-game.sh build the_bumblezone
+ports/tools/launcher-game.sh build the_bumblezone   # native compile steps forward to AdLf-PC
 E2E_TMP=/home/adlf/.cache/horizon-e2e/scratch ports/tools/launcher-game.sh run the_bumblezone
 ```

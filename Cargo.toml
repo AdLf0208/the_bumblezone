@@ -4,7 +4,7 @@
 # behaviour; local-only until publishing is approved, publishable under LGPL-3.0
 # with the complete corresponding source and every asset regenerated.
 name = "the_bumblezone"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "LGPL-3.0-only"
 description = "The Bumblezone dimension and its registered generator and biome source for Horizon"

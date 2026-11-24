@@ -1,11 +1,11 @@
-# Package receipt — the_bumblezone 0.1.1
+# Package receipt — the_bumblezone 0.1.2
 
 | field | value |
 |---|---|
-| version | `0.1.1` |
+| version | `0.1.2` |
 | file | `the_bumblezone.hmod` |
-| bytes | 37,299 |
-| sha256 | `d9b8f63c7d5438fe6b719af08efa5eb33aab87d34e1801c910e360385a046907` |
+| bytes | 42,589 |
+| sha256 | `fd31a9a6ffc0635181405ac8104951686936d99ed3b323433a7a2c40f15a36a9` |
 | source | this tag — the tree here is the source that produced the archive |
 | game | 26.3 |
 | horizon | `0a875da91dbb0fdcb7ba8c42c11341aa229af51a` |
