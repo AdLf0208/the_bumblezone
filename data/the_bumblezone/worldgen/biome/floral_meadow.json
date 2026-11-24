@@ -1,0 +1,34 @@
+{
+  "attributes": {
+    "minecraft:gameplay/creature_world_gen_spawn_probability": 0.13,
+    "minecraft:gameplay/natural_mob_spawns": {
+      "argument": {
+        "spawn_costs": {},
+        "spawns_by_category": {}
+      },
+      "modifier": "overlay"
+    },
+    "minecraft:visual/fog_color": "#c0d8ff",
+    "minecraft:visual/sky_color": "#ffb200",
+    "minecraft:visual/water_fog_color": "#bc7723"
+  },
+  "carvers": [],
+  "downfall": 0.5,
+  "effects": {
+    "ambient_sound": "the_bumblezone:biomes.beehive_ambience",
+    "foliage_color": "#24d839",
+    "grass_color": "#2bff59",
+    "water_color": "#ccebff"
+  },
+  "features": [
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ],
+  "has_precipitation": false,
+  "temperature": 1.85
+}

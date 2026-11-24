@@ -1,11 +1,12 @@
 id = "the_bumblezone"
 name = "The Bumblezone"
-version = "0.1.0"
+version = "0.1.1"
 description = """The Bumblezone's dimension, chunk generator and biome source for Horizon 26.3.
-This first slice registers the three ids the jar declares and the values of its dimension_type,
-with a fail-capable in-game readout. The Java terrain, its biome layer stack and its configured
-features are recorded as gaps; every art asset in this package is regenerated (the upstream art
-is All Rights Reserved)."""
+This slice carries the jar's nine worldgen/biome definitions as authored 26.3 data and composes
+the seven BzBiomeSource layer families, so the registered source answers mod biomes instead of
+vanilla stand-ins; the dimension ids and dimension_type values are as in 0.1.0. The Java terrain
+and configured features stay recorded as gaps; every art asset is regenerated (upstream art is
+All Rights Reserved)."""
 authors = ["TelepathicGrunt (upstream, LGPL-3.0 code)", "AdLf0208 (port)"]
 api = "0.2"
 side = "both"

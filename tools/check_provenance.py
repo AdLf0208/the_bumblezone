@@ -38,6 +38,7 @@ REPORT = ROOT / "PROVENANCE.md"
 GEN_ICON = "generated (`tools/gen_icon.py`: own honeycomb palette and B monogram)"
 AUTHORED = "authored (this port, no upstream byte)"
 CONTRACT = "authored (`tools/carry.py`: values read from the jar, our own bytes)"
+BIOME = "authored (`tools/biome_contract.py` values -> `tools/gen_biomes.py` 26.3 codec shape)"
 LGPL = "authored (canonical LGPL-3.0 text from the system SPDX collection)"
 
 
@@ -66,7 +67,9 @@ def candidates() -> list[tuple[str, bytes, str]]:
     for folder in ("assets", "data"):
         for path in sorted((ROOT / folder).rglob("*")) if (ROOT / folder).is_dir() else []:
             if path.is_file():
-                out.append((str(path.relative_to(ROOT)), path.read_bytes(), GEN_ICON))
+                rel = path.relative_to(ROOT).as_posix()
+                origin = BIOME if rel.startswith("data/the_bumblezone/worldgen/biome/") else GEN_ICON
+                out.append((rel, path.read_bytes(), origin))
     return out
 
 

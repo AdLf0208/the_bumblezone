@@ -5,9 +5,9 @@
 # CONTROL_GAME is the same Nightly without the package, so the control leg
 # differs in the package alone.
 #
-#   tools/e2e.sh                      # modded: ids in the readout + a block in the level
-#   GAME=$CONTROL_GAME tools/e2e.sh   # control: both are unknown  -> FAIL EXIT:1
-#   SELFTEST=1 tools/e2e.sh           # inverted readout assertion -> FAIL EXIT:1
+#   tools/e2e.sh                      # modded: ids + a mod biome in the readout, block in level
+#   GAME=$CONTROL_GAME tools/e2e.sh   # control: ids unknown, command unknown -> FAIL EXIT:1
+#   SELFTEST=1 tools/e2e.sh           # inverted: expects minecraft:plains -> FAIL EXIT:1
 #   BLOCK_SELFTEST=1 tools/e2e.sh     # inverted block assertion   -> FAIL EXIT:1
 set -uo pipefail
 export LC_ALL=C
@@ -23,6 +23,7 @@ BLOCK_SELFTEST=${BLOCK_SELFTEST:-0}
 DIMENSION=the_bumblezone:the_bumblezone
 GENERATOR=the_bumblezone:chunk_generator
 BIOME_SOURCE=the_bumblezone:biome_source
+PROBE="/the_bumblezone dimension 0 8 0 20261105"
 
 [ -n "$CTL" ] && [ -n "$GAME" ] || { echo "missing CTL/GAME: eval \"\$(ports/tools/launcher-game.sh env the_bumblezone)\"" >&2; exit 1; }
 [ -x "$CTL" ] || { echo "missing horizon-ctl: $CTL" >&2; exit 1; }
@@ -74,7 +75,21 @@ echo "start dimension: $(jq -r '.dimension' <<<"$state")"
 say "the registered level takes a block (an id only this package produces)"
 reply=$(ctl command "execute in $DIMENSION run forceload add 8 8" 2>&1 | tr -d '\n')
 echo "execute in $DIMENSION run forceload: $reply"
-grep -qi "unknown dimension" <<<"$reply" && fail "$DIMENSION is unknown to this game: $reply"
+if grep -qi "unknown dimension" <<<"$reply"; then
+    # Control (unmodded) leg: the mod command must be unknown too, not just the
+    # dimension. Prove the readout id is refused before failing the control.
+    ctl chat "$PROBE" >/dev/null
+    c=""
+    for i in $(seq 1 20); do
+        c=$(ctl messages 10 | jq -r '.chat[]?')
+        if grep -qi "Unknown or incomplete command" <<<"$c"; then break; fi
+        ctl wait 1 >/dev/null
+    done
+    echo "control probe $PROBE: $c"
+    grep -qi "Unknown or incomplete command" <<<"$c" \
+        || fail "control: the mod command was accepted: $c"
+    fail "$DIMENSION is unknown to this game (control command refused as expected): $reply"
+fi
 ready=0
 for i in $(seq 1 60); do
     reply=$(ctl command "execute in $DIMENSION if block 8 8 8 minecraft:air run say BZ_LOADED_$i" 2>&1 | tr -d '\n')
@@ -108,6 +123,29 @@ for i in $(seq 1 40); do
     ctl wait 2 >/dev/null
 done
 echo "readout: $lines"
+
+say "the probed cell names a mod biome, not a vanilla stand-in"
+ctl chat "$PROBE" >/dev/null
+biome_lines=""
+for i in $(seq 1 40); do
+    biome_lines=$(ctl messages 10 | jq -r '.chat[]?')
+    if grep -q 'biome the_bumblezone:' <<<"$biome_lines"; then break; fi
+    ctl wait 2 >/dev/null
+done
+echo "biome readout: $biome_lines"
+if [ "$SELFTEST" = 1 ]; then
+    # Inverted: the old/four-stand-in source answered minecraft:plains here.
+    grep -q 'biome minecraft:plains' <<<"$biome_lines" \
+        || fail "SELFTEST: the probed cell named a mod biome, not minecraft:plains: $biome_lines"
+    echo "SELFTEST: minecraft:plains present (unexpected)"
+else
+    grep -q 'biome the_bumblezone:' <<<"$biome_lines" \
+        || fail "the probed cell did not name a mod biome: $biome_lines"
+    if grep -q 'biome minecraft:' <<<"$biome_lines"; then
+        fail "the probed cell named a vanilla stand-in: $biome_lines"
+    fi
+fi
+
 if [ "$SELFTEST" = 1 ]; then
     # Inverted: the package's own ids must NOT be printed. They are, so this leg fails.
     grep -q "the_bumblezone:no_such_dimension" <<<"$lines" \
@@ -125,4 +163,4 @@ reply=$(ctl command "execute in the_bumblezone:no_such_dimension run setblock 8 
 echo "unknown dimension: $reply"
 grep -qi "unknown dimension" <<<"$reply" || fail "an unknown dimension id was accepted: $reply"
 
-echo "PASS: the modded game registers $DIMENSION, $GENERATOR and $BIOME_SOURCE"
+echo "PASS: the modded game registers $DIMENSION, $GENERATOR, $BIOME_SOURCE, and the probed cell names a mod biome"

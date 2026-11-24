@@ -16,15 +16,36 @@ pub const BIOME_SOURCE_ID: &str = "the_bumblezone:biome_source";
 /// The `settings` id the dimension file names.
 pub const NOISE_SETTINGS_ID: &str = "the_bumblezone:bz_noise_settings";
 
-/// Biomes this slice can resolve. The mod's ten biome definitions are not
-/// carried (their art is ARR and the 26.3 biome codec has not been measured), so
-/// the registered source answers with vanilla biomes the world already has;
-/// `possible_biomes` must only name biomes the level can resolve.
-pub const RESOLVED_BIOMES: [&str; 4] = [
-    "minecraft:plains",
-    "minecraft:forest",
-    "minecraft:taiga",
-    "minecraft:desert",
+/// The nine biomes of the artefact's `data/the_bumblezone/worldgen/biome/`,
+/// in the order of its `tags/worldgen/biome/the_bumblezone.json`. They are
+/// authored as 26.3-shape JSON by `tools/gen_biomes.py` from the values in
+/// `tools/biome_contract.json` (no jar byte is carried). The registered source
+/// answers these instead of four vanilla stand-ins.
+pub const BIOMES: [&str; 9] = [
+    "the_bumblezone:hive_pillar",
+    "the_bumblezone:hive_wall",
+    "the_bumblezone:pollinated_fields",
+    "the_bumblezone:pollinated_pillar",
+    "the_bumblezone:sugar_water_floor",
+    "the_bumblezone:crystal_canyon",
+    "the_bumblezone:floral_meadow",
+    "the_bumblezone:howling_constructs",
+    "the_bumblezone:bumbling_beepartments",
+];
+
+/// The seven `BzBiomeSource` layer classes, named from the artefact's
+/// `BzBiomeSource.class` constant pool (read as strings, no decompilation).
+/// The deterministic selector below composes their behaviour in the same
+/// order: base → pillar → scale → blob → pollinated pillar → pollinated
+/// fields → merge. It is a clean-room behavioural shape, not a Java port.
+pub const LAYER_FAMILIES: [&str; 7] = [
+    "BzBiomeLayer",
+    "BzBiomePillarLayer",
+    "BzBiomeScaleLayer",
+    "BzBiomeBlobLayer",
+    "BzBiomePollinatedPillarLayer",
+    "BzBiomePollinatedFieldsLayer",
+    "BzBiomeMergeLayer",
 ];
 
 /// The jar's `dimension_type` values, field for field where the SDK has a field.
@@ -71,18 +92,81 @@ pub fn dimension_values() -> DimensionValues {
     }
 }
 
-/// The deterministic biome index a quart cell gets from the registered source.
-/// The mod's layer stack is a later slice; this keeps the source stateless and
-/// the answer reproducible for a seed and cell.
+// Index groups the artefact's biome tags select from (see biome_contract.json).
+const PILLARS: [u16; 2] = [0, 3]; // tags/worldgen/biome/pillars.json
+const BLOBS: [u16; 3] = [5, 0, 1]; // blob_biomes.json + the hive_wall filler
+const RARE_BLOBS: [u16; 3] = [6, 7, 8]; // rare_blob_biomes.json
+const POLLINATED: [u16; 2] = [3, 2]; // tags/worldgen/biome/pollinated.json
+const SUGAR_WATER: u16 = 4; // tags/worldgen/biome/sugar_water.json
+
+// Independent salts keep each layer's random field uncorrelated. Values are
+// arbitrary odd 64-bit constants; only their distinctness matters.
+const SALT_BASE: u64 = 0x9E37_79B9_7F4A_7C15;
+const SALT_PILLAR: u64 = 0xBF58_476D_1CE4_E5B9;
+const SALT_BLOB: u64 = 0x94D0_49BB_1331_11EB;
+const SALT_FIELD: u64 = 0xD1B5_4A32_D192_ED03;
+const SALT_SUGAR: u64 = 0x27D4_EB2F_165A_4507;
+const SALT_RARE: u64 = 0x5851_F42D_4C95_7F2D;
+
+/// A stable hash of one layer's cell and seed. SplitMix-style mixing gives a
+/// well-distributed field without any dependency (R9 forbids one).
+fn cell_hash(cell: [i32; 3], seed: i64, salt: u64) -> u64 {
+    let mut hash = (seed as u64) ^ salt;
+    for (axis, coordinate) in cell.iter().enumerate() {
+        hash = hash.wrapping_mul(SALT_BASE)
+            ^ ((*coordinate as u64)
+                .wrapping_add(axis as u64)
+                .wrapping_mul(SALT_PILLAR));
+    }
+    // SplitMix64 finalizer: avalanches the low bits so `% 100` and `% group`
+    // are uniform for neighbouring cells instead of inheriting their pattern.
+    hash ^= hash >> 30;
+    hash = hash.wrapping_mul(SALT_PILLAR);
+    hash ^= hash >> 27;
+    hash = hash.wrapping_mul(SALT_BLOB);
+    hash ^ (hash >> 31)
+}
+
+/// Pick one index from a layer's tag group, deterministic for a cell and seed.
+fn pick(group: &[u16], quart: [i32; 3], seed: i64, salt: u64) -> u16 {
+    group[usize::try_from(cell_hash(quart, seed, salt) % group.len() as u64)
+        .expect("a modulo by a non-empty group fits usize")]
+}
+
+/// The biome index a quart cell gets from the registered source. Each branch
+/// is one `BzBiomeSource` layer family, composed in the jar's order and settled
+/// by the merge layer's priority. Pure and stateless, so a seed and cell always
+/// answer the same biome; no game handle reaches this function.
 #[must_use]
 pub fn biome_index(quart: [i32; 3], seed: i64) -> u16 {
-    let mut hash = (seed as u64) ^ 0x9e37_79b9_7f4a_7c15;
-    for coordinate in quart {
-        hash = hash
-            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-            .wrapping_add((coordinate as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9));
+    let [x, y, z] = quart;
+    // BzBiomePollinatedFieldsLayer: broad, flat fields.
+    if cell_hash([x >> 5, 0, z >> 5], seed, SALT_FIELD) % 100 < 22 {
+        return POLLINATED[1];
     }
-    (hash % RESOLVED_BIOMES.len() as u64) as u16
+    // BzBiomeBlobLayer: its rare blobs are a sparser, larger overlay.
+    if cell_hash([x >> 4, y >> 3, z >> 4], seed, SALT_RARE) % 100 < 12 {
+        return pick(&RARE_BLOBS, quart, seed, SALT_RARE ^ SALT_BASE);
+    }
+    let blob = cell_hash([x >> 3, y >> 2, z >> 3], seed, SALT_BLOB);
+    if blob % 100 < 24 {
+        return pick(&BLOBS, quart, seed, SALT_PILLAR);
+    }
+    // BzBiomePillarLayer, zoomed by BzBiomeScaleLayer; pollinated pillars split off.
+    let pillar = cell_hash([x >> 2, y >> 3, z >> 2], seed, SALT_PILLAR);
+    if pillar % 100 < 32 {
+        return if pillar.is_multiple_of(3) {
+            pick(&POLLINATED, quart, seed, SALT_FIELD)
+        } else {
+            pick(&PILLARS, quart, seed, SALT_BLOB)
+        };
+    }
+    // Sugar-water floor, low in the column.
+    if cell_hash([x >> 2, y, z >> 2], seed, SALT_SUGAR) % 100 < 18 {
+        return SUGAR_WATER;
+    }
+    // BzBiomeLayer base: the dimension's main biome dominates.
+    PILLARS[0]
 }
 
 /// One line naming the three registered ids and the dimension_type numbers.
@@ -93,13 +177,14 @@ pub fn status_line() -> String {
     format!(
         "{DIMENSION_ID} | generator {CHUNK_GENERATOR_ID} | biome source {BIOME_SOURCE_ID} | \
          min_y={} height={} ambient_light={} coordinate_scale={} \
-         monster_spawn_light_level={}..={}",
+         monster_spawn_light_level={}..={} | layers {}",
         v.min_y,
         v.height,
         v.ambient_light,
         v.coordinate_scale,
         v.monster_spawn_light_level.0,
-        v.monster_spawn_light_level.1
+        v.monster_spawn_light_level.1,
+        LAYER_FAMILIES.len()
     )
 }
 
@@ -231,13 +316,75 @@ mod tests {
     }
 
     #[test]
-    fn biome_answers_are_deterministic_and_in_range() {
+    fn biome_answers_are_deterministic_and_seed_sensitive() {
         for quart in [[0, 16, 0], [3, -4, 7], [-12, 0, 33]] {
             let first = biome_index(quart, 20_261_105);
             assert_eq!(first, biome_index(quart, 20_261_105));
-            assert!(usize::from(first) < RESOLVED_BIOMES.len());
-            assert_ne!(first, biome_index(quart, 20_261_106));
+            assert!(usize::from(first) < BIOMES.len());
         }
+        // The seed must matter somewhere in the stack, but a given cell can
+        // legitimately land in the same base biome for two nearby seeds.
+        let mut differs = false;
+        for x in -64..64 {
+            for z in -64..64 {
+                if biome_index([x, 2, z], 20_261_105) != biome_index([x, 2, z], 20_261_106) {
+                    differs = true;
+                }
+            }
+        }
+        assert!(differs, "changing the seed must change some biome");
+    }
+
+    /// Every layer family's tag group is reachable over a representative
+    /// slice of the dimension, and every answer is one of the nine ids.
+    #[test]
+    fn the_layer_stack_reaches_all_nine_biomes() {
+        let mut seen = [false; 9];
+        // Wide enough for the largest region scale (`x >> 5`): a small grid
+        // only sees two region cells and cannot exercise the rare blobs.
+        for x in (-128..128).step_by(4) {
+            for z in (-128..128).step_by(4) {
+                for y in (0..32).step_by(2) {
+                    let index = biome_index([x, y, z], 20_261_105);
+                    assert!(
+                        usize::from(index) < 9,
+                        "index {index} outside the nine biomes"
+                    );
+                    seen[usize::from(index)] = true;
+                }
+            }
+        }
+        assert_eq!(
+            seen.iter().filter(|seen| **seen).count(),
+            9,
+            "the layer stack must reach every biome: {seen:?}"
+        );
+        // The layer families named by the artefact are all declared.
+        assert_eq!(LAYER_FAMILIES.len(), 7);
+    }
+
+    /// RED FIRST (slice 0.1.1): the registered source must answer the jar's
+    /// `worldgen/biome` set, not four vanilla stand-ins. The nine ids are the
+    /// artefact's `data/the_bumblezone/worldgen/biome/*.json` files, in the
+    /// order of its `tags/worldgen/biome/the_bumblezone.json`.
+    #[test]
+    fn the_source_answers_the_jars_biomes() {
+        let want = [
+            "the_bumblezone:hive_pillar",
+            "the_bumblezone:hive_wall",
+            "the_bumblezone:pollinated_fields",
+            "the_bumblezone:pollinated_pillar",
+            "the_bumblezone:sugar_water_floor",
+            "the_bumblezone:crystal_canyon",
+            "the_bumblezone:floral_meadow",
+            "the_bumblezone:howling_constructs",
+            "the_bumblezone:bumbling_beepartments",
+        ];
+        assert_eq!(
+            BIOMES.as_slice(),
+            &want,
+            "the biome source must answer the jar's nine biomes, not vanilla stand-ins"
+        );
     }
 }
 

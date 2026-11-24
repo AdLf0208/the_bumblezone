@@ -6,9 +6,12 @@
 //! values, deterministic answers and the readout text live in [`runtime`]; this
 //! file is only typed glue to the SDK.
 //!
-//! Explicit gaps (measured, never faked): the Java terrain shape and the mod's
-//! ten biome definitions are a later deep slice, and configured features cannot
-//! be registered at this pin. `notes.md` records both with their symbols.
+//! Slice 0.1.1 carries the jar's nine `worldgen/biome` definitions as authored
+//! 26.3 data and composes the seven `BzBiomeSource` layer families in pure
+//! logic, so the source answers mod biomes instead of vanilla stand-ins. The
+//! Java terrain shape and configured features remain measured gaps
+//! (`blocked(configured-feature-not-registered)`, `blocked(level_reset:R11)`);
+//! `notes.md` records both with their symbols.
 use mod_api::{
     self, BiomeSource, ChunkAccess, ChunkGenerator, Command, CommandArgumentValue,
     DimensionSettings, Flow, Hooks, RegisterCommandsEvent, Registrar, RegistrationContext,
@@ -17,18 +20,15 @@ use mod_api::{
 
 mod runtime;
 
-/// The mod's biome source id, whose `possible_biomes` must name biomes the
-/// level can resolve. Until the mod's ten biome definitions are carried, the
-/// source answers with vanilla biomes (`runtime::RESOLVED_BIOMES`).
+/// The mod's biome source id. Its `possible_biomes` names the nine biomes the
+/// package carries as authored 26.3 data (`runtime::BIOMES`), and `noise_biome`
+/// answers one of them through the deterministic `BzBiomeSource` layer stack.
 #[derive(Default)]
 struct BzBiomeSource;
 
 impl BiomeSource for BzBiomeSource {
     fn possible_biomes(&self) -> Vec<String> {
-        runtime::RESOLVED_BIOMES
-            .iter()
-            .map(|id| (*id).to_owned())
-            .collect()
+        runtime::BIOMES.iter().map(|id| (*id).to_owned()).collect()
     }
 
     fn noise_biome(&self, quart: [i32; 3], seed: i64) -> u16 {
@@ -129,7 +129,7 @@ pub fn run_command(host: &mut dyn ServerHost, event: &mut RunModCommandEvent<'_>
         let index = runtime::biome_index([*x >> 2, *y >> 2, *z >> 2], i64::from(*seed));
         line.push_str(&format!(
             " | biome {} ({index})",
-            runtime::RESOLVED_BIOMES[usize::from(index)]
+            runtime::BIOMES[usize::from(index)]
         ));
     }
     let _ = host.commands().feedback(Text::literal(line));
@@ -195,14 +195,28 @@ mod tests {
     }
 
     #[test]
-    fn the_source_lists_only_biomes_the_level_can_resolve() {
+    fn the_source_lists_the_jars_nine_biomes() {
         let source = BzBiomeSource;
         let biomes = source.possible_biomes();
-        assert_eq!(biomes, runtime::RESOLVED_BIOMES);
+        let want: Vec<String> = runtime::BIOMES.iter().map(|id| (*id).to_owned()).collect();
+        assert_eq!(biomes, want);
+        assert!(biomes.iter().all(|id| id.starts_with("the_bumblezone:")));
         for quart in [[0, 16, 0], [5, -8, 2]] {
             let index = source.noise_biome(quart, 20_261_105);
             assert!(usize::from(index) < biomes.len());
+            assert!(biomes[usize::from(index)].starts_with("the_bumblezone:"));
         }
+    }
+
+    #[test]
+    fn the_probed_cell_readout_names_a_mod_biome() {
+        // Mirrors the in-game leg: `ctl chat "/the_bumblezone dimension 0 8 0 20261105"`.
+        let index = runtime::biome_index([0 >> 2, 8 >> 2, 0 >> 2], 20_261_105);
+        let id = runtime::BIOMES[usize::from(index)];
+        assert!(
+            id.starts_with("the_bumblezone:"),
+            "the probed cell must name a mod biome, got {id}"
+        );
     }
 
     #[test]

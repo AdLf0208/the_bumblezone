@@ -10,9 +10,18 @@ regenerated, and `tools/check_provenance.py` proves zero jar-derived bytes. The 
 is published with its complete corresponding source under LGPL-3.0. See
 [`LICENSE-NOTICE.md`](LICENSE-NOTICE.md).
 
-## What this first slice does
+## What this slice does (0.1.1)
 
-Registers the three ids the jar declares:
+Carries the jar's **nine** `worldgen/biome` definitions as authored 26.3-shape
+JSON (`tools/biome_contract.json` values → `tools/gen_biomes.py`), with zero
+jar-derived bytes, and composes the **seven** `BzBiomeSource` layer families
+(base, pillar, scale, blob, pollinated pillar, pollinated fields, merge) in pure
+logic. The registered source now answers the mod's biomes (e.g.
+`the_bumblezone:hive_pillar`) instead of four vanilla stand-ins. The in-game
+leg asserts the probed cell's `biome …` line names a mod id; the unmodded
+control answers `Unknown or incomplete command` and `SELFTEST=1` fails.
+
+The dimension slice from 0.1.0 is unchanged: it registers the three ids the jar declares:
 
 - `the_bumblezone:the_bumblezone` — the dimension,
 - `the_bumblezone:chunk_generator` — its generator,
@@ -27,14 +36,18 @@ piglins safe, beds work, fixed time 6000).
 the numbers, and is asserted in game on the modded build, the unmodded control and
 an inverted `SELFTEST=1` leg.
 
-The Java terrain shape, the mod's ten biomes, its configured features and its client
+The Java terrain shape, the mob spawner lists, configured features and the client
 dimension effects are recorded as gaps in [`notes.md`](notes.md); nothing is faked to
-fill them.
+fill them. Note: the brief said "ten" biomes / "nine" layers, but the artefact
+carries **nine** biome files and **seven** `BzBiome*Layer` classes — the artefact
+is the authority.
 
 ## Build and verify
 
 ```sh
-python3 tools/carry.py --check            # snapshot vs jar vs Rust contract
+python3 tools/carry.py --check            # dimension snapshot vs jar vs Rust
+python3 tools/biome_contract.py --check   # nine biome ids/tags/families vs jar + Rust
+python3 tools/gen_biomes.py --check       # shipped JSON matches the generator
 python3 tools/check_provenance.py --check # zero jar-derived asset bytes
 ports/tools/build-slot.sh run --job BZ --port ports/the_bumblezone --step test -- \
     env CARGO_INCREMENTAL=0 cargo test --offline
