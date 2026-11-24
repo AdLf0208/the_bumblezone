@@ -1,0 +1,16 @@
+[package]
+# Port of The Bumblezone 7.17.3+1.21.1-neoforge (TelepathicGrunt/Bumblezone,
+# code LGPL-3.0, assets ARR). Clean-room Rust rewrite of the mod's observed
+# behaviour; local-only until publishing is approved, publishable under LGPL-3.0
+# with the complete corresponding source and every asset regenerated.
+name = "the_bumblezone"
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-only"
+description = "The Bumblezone dimension and its registered generator and biome source for Horizon"
+publish = false
+
+[dependencies]
+# The pinned SDK's API crate only (registry rule R9: no other dependency, no [workspace],
+# no packed Cargo.lock).
+horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
